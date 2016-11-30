@@ -1,9 +1,15 @@
 #!/usr/bin/python3 -i
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.contrib.learn.python.learn.datasets.mnist import DataSet
+from tensorflow.python.framework import dtypes
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
+
+import ilogger
+ilogger.setup_root_logger('/dev/null', logging.INFO)
+logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
     
@@ -42,14 +48,18 @@ class MNISTSoftmaxRegression(object):
         self.train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.cross_entropy)
         
         # initialization
-        self.init = tf.initialize_all_variables()
+        self.init = tf.global_variables_initializer()
 
         # evaluation
         self.correct_prediction = tf.equal(tf.argmax(self.y,1), tf.argmax(self.y_,1))
         self.accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
         
         # initialize model
-        self.sess = tf.Session()
+        if tf.get_default_session():
+            logger.info('default session available; using default session for model')
+            self.sess = tf.get_default_session()
+        else:
+            self.sess = tf.Session()
         self.sess.run(self.init)
 
     def train_model(self):
@@ -97,7 +107,8 @@ class DistSimulation(MNISTSoftmaxRegression):
 
             images = np.concatenate([common_examples, subset_examples], axis=0)
             labels = np.concatenate([common_examples_labels, subset_examples_labels], axis=0)
-            self.training_data_sets.append( DataSet(images, labels, reshape=False) )
+            # using dtype = dtypes.uint8 to prevent the DataSet class to scale the features by 1/255
+            self.training_data_sets.append( DataSet(images, labels, reshape=False, dtype=dtypes.uint8) )
 
     def train_distributed_models(self):
         self.distributed_models = []

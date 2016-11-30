@@ -2,9 +2,12 @@
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.contrib.learn.python.learn.datasets.mnist import DataSet
 from tensorflow.python.framework import dtypes
+from os import path
+
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import pdb
 import logging
 
 import ilogger
@@ -13,10 +16,16 @@ logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
     
-    def __init__(self, minibatch_size, learning_rate, n_epochs, mnist_train=None):
+    def __init__(self, minibatch_size, learning_rate, n_epochs, mnist_train=None, model_name='classifier', write_summary=False):
         self.minibatch_size = minibatch_size
         self.learning_rate = learning_rate
         self.n_epochs = n_epochs
+        self.model_name = model_name
+        # only ONE summary key is supported
+        self.write_summary = write_summary
+        self.summaries = ['/'.join([tf.GraphKeys.SUMMARIES, self.model_name])]
+        
+        logger.info('data for {0} : images.shape = {1}, labels.shape = {2}'.format(model_name, mnist_train.images.shape, mnist_train.labels.shape))
 
         if mnist_train is None:
             self.load_mnist_data()
@@ -30,42 +39,78 @@ class MNISTSoftmaxRegression(object):
         self.mnist_train = input_data.read_data_sets("MNIST_data/", one_hot=True).train
 
     def construct_model(self):
-        # place holder for input with unknown number of examples
-        self.x = tf.placeholder(tf.float32, [None, 784])
-        
-        # model parameters
-        #  model: y_hat = softmax( W^T x + b )
-        #  W.shape = n_features x n_classes
-        self.W = tf.Variable(tf.random_normal([784, 10]))
-        self.b = tf.Variable(tf.zeros([10]))
+        with tf.variable_scope(self.model_name):
+            # place holder for input with unknown number of examples
+            with tf.variable_scope('features'):
+                self.x = tf.placeholder(tf.float32, [None, 784], name='x')
+            
+            # model parameters
+            #  model: y_hat = softmax( W^T x + b )
+            #  W.shape = n_features x n_classes
+            #  also assign model parameters if needed
+            with tf.variable_scope('model_parameters'):
+                self.W = tf.Variable(tf.random_normal([784, 10]), name='W')
+                # self.W = tf.Variable(tf.zeros([784, 10]), name='W')
+                self.b = tf.Variable(tf.random_normal([10]), name='b')
+                # self.b = tf.Variable(tf.zeros([10]), name='b')
 
-        # output
-        self.y = tf.nn.softmax(tf.matmul(self.x, self.W) + self.b)
+                self.W_assign_value = tf.placeholder(tf.float32, [784, 10], name='W_assign_value')
+                self.b_assign_value = tf.placeholder(tf.float32, [10], name='b_assign_value')
+                self.W_assign = tf.assign(self.W, self.W_assign_value, name='W_assign')
+                self.b_assign = tf.assign(self.b, self.b_assign_value, name='b_assign')
 
-        # labels and training
-        self.y_ = tf.placeholder(tf.float32, [None, 10])
-        self.cross_entropy = tf.reduce_mean( -tf.reduce_sum(self.y_ * tf.log(self.y), reduction_indices=[1]) )
-        self.train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.cross_entropy)
-        
-        # initialization
-        self.init = tf.global_variables_initializer()
+            # output
+            with tf.variable_scope('softmax_layer'):
+                self.Wx_plus_b = tf.add(tf.matmul(self.x, self.W), self.b, name='Wx_plus_b')
+                self.y = tf.nn.softmax(self.Wx_plus_b, name='softmax_OF_Wx_plus_b')
 
-        # evaluation
-        self.correct_prediction = tf.equal(tf.argmax(self.y,1), tf.argmax(self.y_,1))
-        self.accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
-        
-        # initialize model
-        if tf.get_default_session():
-            logger.info('default session available; using default session for model')
-            self.sess = tf.get_default_session()
-        else:
-            self.sess = tf.Session()
-        self.sess.run(self.init)
+            # labels and training
+            with tf.variable_scope('training'):
+                self.y_ = tf.placeholder(tf.float32, [None, 10], name='labels')
+                self.cross_entropy = tf.reduce_mean( -tf.reduce_sum(self.y_ * tf.log(self.y), reduction_indices=[1]), name='cross_entropy' )
+                self.train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.cross_entropy)
+            
+            # evaluation
+            with tf.variable_scope('evaluation'):
+                self.correct_prediction = tf.equal(tf.argmax(self.y,1), tf.argmax(self.y_,1))
+                self.accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
+            
+            # summary
+            tf.summary.scalar('xentropy', self.cross_entropy, collections=self.summaries)
+            tf.summary.scalar('accuracy', self.accuracy, collections=self.summaries)
+            self.merge_summaries = tf.summary.merge_all(self.summaries[0])
+            
+            # get session
+            if tf.get_default_session():
+                logger.info('default session available; using default session for model')
+                self.sess = tf.get_default_session()
+            else:
+                self.sess = tf.Session()
+            
+            # initialization
+            with tf.variable_scope('initialize'):
+                model_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.model_name)
+                self.init = tf.variables_initializer(model_variables)
+            self.sess.run(self.init)
+    
+    def assign_W(self, W_assign_value):
+        self.sess.run(self.W_assign, feed_dict={self.W_assign_value: W_assign_value})
+
+    def assign_b(self, b_assign_value):
+        self.sess.run(self.b_assign, feed_dict={self.b_assign_value: b_assign_value})
 
     def train_model(self):
+        if self.write_summary:
+            summary_dir = path.join(path.curdir, 'summary', 'train', self.model_name)
+            summary_writer = tf.train.SummaryWriter(summary_dir, self.sess.graph)
+
         for i in range(self.n_epochs):
             batch_xs, batch_ys = self.mnist_train.next_batch(self.minibatch_size)
-            self.sess.run(self.train_step, feed_dict={self.x: batch_xs, self.y_: batch_ys})
+            if self.write_summary:
+                summary, _ = self.sess.run([self.merge_summaries, self.train_step], feed_dict={self.x: batch_xs, self.y_: batch_ys})
+                summary_writer.add_summary(summary, i)
+            else:
+                self.sess.run(self.train_step, feed_dict={self.x: batch_xs, self.y_: batch_ys})
 
     def evaluate_model(self, test_data):
         accuracy_eval = self.sess.run(self.accuracy, feed_dict={self.x: test_data.images, self.y_: test_data.labels})
@@ -74,11 +119,11 @@ class MNISTSoftmaxRegression(object):
 
 class DistSimulation(MNISTSoftmaxRegression):
     
-    def __init__(self, n_machines, common_examples_fraction, *args):
+    def __init__(self, n_machines, common_examples_fraction, *args, **kwargs):
         self.n_machines = n_machines
         self.common_examples_fraction = common_examples_fraction
 
-        super().__init__(*args)
+        super().__init__(*args, **kwargs)
 
     def train_model(self):
         self.partition_data()
@@ -113,7 +158,8 @@ class DistSimulation(MNISTSoftmaxRegression):
     def train_distributed_models(self):
         self.distributed_models = []
         for i_machine, mnist_train in enumerate(self.training_data_sets):
-            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_epochs, mnist_train)
+            dist_model_name = '/'.join([self.model_name, 'dist_model_{0}'.format(i_machine)])
+            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_epochs, mnist_train, model_name=dist_model_name, write_summary=self.write_summary)
             self.distributed_models.append(model)
     
     def combine_distributed_models(self):
@@ -126,10 +172,8 @@ class DistSimulation(MNISTSoftmaxRegression):
 
         W_avg = np.mean(W_list, axis=0)
         b_avg = np.mean(b_list, axis=0)
-        assign_W = self.W.assign(W_avg)
-        assign_b = self.b.assign(b_avg)
-        self.sess.run(assign_W)
-        self.sess.run(assign_b)
+        self.assign_W(W_avg)
+        self.assign_b(b_avg)
     
     def evaluate_distributed_models(self, test_data):
         accuracy_list = []
@@ -143,17 +187,22 @@ if __name__=='__main__':
     n_epochs = 1000
 
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
-    mnist_classifier = MNISTSoftmaxRegression(minibatch_size, learning_rate, n_epochs, mnist.train)
+    mnist_classifier = MNISTSoftmaxRegression(minibatch_size, learning_rate, 
+                                              n_epochs, mnist.train, 
+                                              model_name='UnifiedClassifier', 
+                                              write_summary=False)
     accuracy = mnist_classifier.evaluate_model(mnist.test)
 
-    print('accuracy = {0}'.format(accuracy))
+    logger.info('unified model accuracy = {0}'.format(accuracy))
 
     n_machines = 4
-    common_examples_fraction = 1
-    mnist_distributed = DistSimulation(n_machines, common_examples_fraction, minibatch_size, learning_rate, n_epochs, mnist.train)
+    common_examples_fraction = 0.4
+    mnist_distributed = DistSimulation(n_machines, common_examples_fraction, 
+                                       minibatch_size, learning_rate, n_epochs, 
+                                       mnist.train, model_name='DistributedClassifier', 
+                                       write_summary=False)
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)
     dist_model_accuracy_list = mnist_distributed.evaluate_distributed_models(mnist.test)
 
-    print('combined_model_accuracy = {0}'.format(combined_model_accuracy))
-    print('dist_model_accuracy_list:')
-    print(dist_model_accuracy_list)
+    logger.info('combined_model_accuracy = {0}'.format(combined_model_accuracy))
+    logger.info('dist_model_accuracy_list: {0}'.format(dist_model_accuracy_list))

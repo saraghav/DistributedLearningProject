@@ -1,0 +1,2 @@
+vim -p \
+    distributed_sim_mnist_softmax.py \

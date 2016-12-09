@@ -11,7 +11,7 @@ import pdb
 import logging
 
 import ilogger
-ilogger.setup_root_logger('/dev/null', logging.INFO)
+ilogger.setup_root_logger('/dev/null', logging.DEBUG)
 logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
@@ -33,7 +33,6 @@ class MNISTSoftmaxRegression(object):
             self.mnist_train = mnist_train
 
         self.construct_model()
-        self.train_model()
 
     def load_mnist_data(self):
         self.mnist_train = input_data.read_data_sets("MNIST_data/", one_hot=True).train
@@ -125,17 +124,17 @@ class MNISTSoftmaxRegression(object):
 
 class DistSimulation(MNISTSoftmaxRegression):
     
-    def __init__(self, n_machines, common_examples_fraction, sync_iterations, *args, **kwargs):
+    def __init__(self, n_machines, common_examples_fraction, sync_iterations, averaging_interval, *args, **kwargs):
         self.n_machines = n_machines
         self.common_examples_fraction = common_examples_fraction
         self.sync_iterations = sync_iterations
+        self.averaging_interval = averaging_interval
 
         super().__init__(*args, **kwargs)
 
     def train_model(self):
         self.partition_data()
         self.train_distributed_models()
-        self.combine_distributed_models()
 
     def partition_data(self):
         n_examples = self.mnist_train.images.shape[0]
@@ -171,13 +170,31 @@ class DistSimulation(MNISTSoftmaxRegression):
             self.training_data_sets.append( data_set )
 
     def train_distributed_models(self):
+        assert self.averaging_interval <= self.n_iterations, "averaging_interval MUST be <= n_iterations"
+        
         self.distributed_models = []
         for i_machine, mnist_train in enumerate(self.training_data_sets):
             dist_model_name = '/'.join([self.model_name, 'dist_model_{0}'.format(i_machine)])
-            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_iterations, mnist_train, model_name=dist_model_name, write_summary=self.write_summary)
+
+            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_iterations, 
+                                           mnist_train, model_name=dist_model_name, 
+                                           write_summary=self.write_summary)
             self.distributed_models.append(model)
+        
+        # why use the slice [1:] ?
+        #    index [0] == 0, zero iterations should not be considered
+        train_stride_list = np.arange(0, self.n_iterations+1, self.averaging_interval)[1:]
+        for train_stride in train_stride_list:
+            for model in self.distributed_models:
+                model.train_model()
+            self.combine_distributed_models()
+            for model in self.distributed_models:
+                model.set_W(self.get_W())
+                model.set_b(self.get_b())
     
     def combine_distributed_models(self):
+        logger.debug('combine_distributed_models()')
+
         W_list = []
         b_list = []
 
@@ -214,6 +231,7 @@ if __name__=='__main__':
                                               n_iterations, mnist.train, 
                                               model_name='UnifiedClassifier', 
                                               write_summary=False)
+    mnist_classifier.train_model()
     accuracy = mnist_classifier.evaluate_model(mnist.test)
 
     logger.info('unified model accuracy = {0}'.format(accuracy))
@@ -221,10 +239,13 @@ if __name__=='__main__':
     n_machines = 4
     common_examples_fraction = 0.4
     sync_iterations = True
+    averaging_interval = n_iterations//4
     mnist_distributed = DistSimulation(n_machines, common_examples_fraction, sync_iterations,
+                                       averaging_interval, 
                                        minibatch_size, learning_rate, n_iterations, 
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
+    mnist_distributed.train_model()
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)
     dist_model_accuracy_list = mnist_distributed.evaluate_distributed_models(mnist.test)
 

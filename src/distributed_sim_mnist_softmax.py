@@ -93,10 +93,16 @@ class MNISTSoftmaxRegression(object):
                 self.init = tf.variables_initializer(model_variables)
             self.sess.run(self.init)
     
-    def assign_W(self, W_assign_value):
+    def get_W(self):
+        return self.W.eval(session=self.sess)
+
+    def set_W(self, W_assign_value):
         self.sess.run(self.W_assign, feed_dict={self.W_assign_value: W_assign_value})
 
-    def assign_b(self, b_assign_value):
+    def get_b(self):
+        return self.b.eval(session=self.sess)
+
+    def set_b(self, b_assign_value):
         self.sess.run(self.b_assign, feed_dict={self.b_assign_value: b_assign_value})
 
     def train_model(self):
@@ -176,13 +182,13 @@ class DistSimulation(MNISTSoftmaxRegression):
         b_list = []
 
         for i_machine, model in enumerate(self.distributed_models):
-            W_list.append( model.W.eval(session=model.sess) )
-            b_list.append( model.b.eval(session=model.sess) )
+            W_list.append( model.get_W() )
+            b_list.append( model.get_b() )
 
         W_avg = np.mean(W_list, axis=0)
         b_avg = np.mean(b_list, axis=0)
-        self.assign_W(W_avg)
-        self.assign_b(b_avg)
+        self.set_W(W_avg)
+        self.set_b(b_avg)
     
     def evaluate_distributed_models(self, test_data):
         accuracy_list = []

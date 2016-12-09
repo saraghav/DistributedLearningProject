@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
-from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.contrib.learn.python.learn.datasets.mnist import DataSet
+import input_data
+from input_data import DataSet
 from tensorflow.python.framework import dtypes
 from os import path
 
@@ -16,10 +16,10 @@ logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
     
-    def __init__(self, minibatch_size, learning_rate, n_epochs, mnist_train=None, model_name='classifier', write_summary=False):
+    def __init__(self, minibatch_size, learning_rate, n_iterations, mnist_train=None, model_name='classifier', write_summary=False):
         self.minibatch_size = minibatch_size
         self.learning_rate = learning_rate
-        self.n_epochs = n_epochs
+        self.n_iterations = n_iterations
         self.model_name = model_name
         # only ONE summary key is supported
         self.write_summary = write_summary
@@ -104,7 +104,7 @@ class MNISTSoftmaxRegression(object):
             summary_dir = path.join(path.curdir, 'summary', 'train', self.model_name)
             summary_writer = tf.train.SummaryWriter(summary_dir, self.sess.graph)
 
-        for i in range(self.n_epochs):
+        for i in range(self.n_iterations):
             batch_xs, batch_ys = self.mnist_train.next_batch(self.minibatch_size)
             if self.write_summary:
                 summary, _ = self.sess.run([self.merge_summaries, self.train_step], feed_dict={self.x: batch_xs, self.y_: batch_ys})
@@ -119,9 +119,10 @@ class MNISTSoftmaxRegression(object):
 
 class DistSimulation(MNISTSoftmaxRegression):
     
-    def __init__(self, n_machines, common_examples_fraction, *args, **kwargs):
+    def __init__(self, n_machines, common_examples_fraction, sync_iterations, *args, **kwargs):
         self.n_machines = n_machines
         self.common_examples_fraction = common_examples_fraction
+        self.sync_iterations = sync_iterations
 
         super().__init__(*args, **kwargs)
 
@@ -140,6 +141,11 @@ class DistSimulation(MNISTSoftmaxRegression):
         common_examples_indices = random_order[0:n_common_examples]
         common_examples = self.mnist_train.images[common_examples_indices, :]
         common_examples_labels = self.mnist_train.labels[common_examples_indices, :]
+
+        if self.sync_iterations:
+            n_examples_per_machine = n_common_examples+n_subset_examples
+            n_epochs_per_machine = int(np.ceil(self.n_iterations*self.minibatch_size/n_examples_per_machine))
+            perm_list = self.get_permutations(n_epochs_per_machine, n_examples_per_machine)
         
         self.training_data_sets = []
         for i_machine in range(self.n_machines):
@@ -153,13 +159,16 @@ class DistSimulation(MNISTSoftmaxRegression):
             images = np.concatenate([common_examples, subset_examples], axis=0)
             labels = np.concatenate([common_examples_labels, subset_examples_labels], axis=0)
             # using dtype = dtypes.uint8 to prevent the DataSet class to scale the features by 1/255
-            self.training_data_sets.append( DataSet(images, labels, reshape=False, dtype=dtypes.uint8) )
+            data_set = DataSet(images, labels, reshape=False, dtype=dtypes.uint8)
+            if self.sync_iterations:
+                data_set.perm_list = perm_list
+            self.training_data_sets.append( data_set )
 
     def train_distributed_models(self):
         self.distributed_models = []
         for i_machine, mnist_train in enumerate(self.training_data_sets):
             dist_model_name = '/'.join([self.model_name, 'dist_model_{0}'.format(i_machine)])
-            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_epochs, mnist_train, model_name=dist_model_name, write_summary=self.write_summary)
+            model = MNISTSoftmaxRegression(self.minibatch_size, self.learning_rate, self.n_iterations, mnist_train, model_name=dist_model_name, write_summary=self.write_summary)
             self.distributed_models.append(model)
     
     def combine_distributed_models(self):
@@ -181,14 +190,22 @@ class DistSimulation(MNISTSoftmaxRegression):
             accuracy_list.append( model.evaluate_model(test_data) )
         return accuracy_list
 
+    def get_permutations(self, num_perms, perm_length):
+        perm_list = []
+        for perm_n in range(num_perms):
+            perm = np.arange(perm_length)
+            np.random.shuffle(perm)
+            perm_list.append(perm)
+        return perm_list
+
 if __name__=='__main__':
     minibatch_size = 100
     learning_rate = 0.5
-    n_epochs = 1000
+    n_iterations = 1000
 
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     mnist_classifier = MNISTSoftmaxRegression(minibatch_size, learning_rate, 
-                                              n_epochs, mnist.train, 
+                                              n_iterations, mnist.train, 
                                               model_name='UnifiedClassifier', 
                                               write_summary=False)
     accuracy = mnist_classifier.evaluate_model(mnist.test)
@@ -197,8 +214,9 @@ if __name__=='__main__':
 
     n_machines = 4
     common_examples_fraction = 0.4
-    mnist_distributed = DistSimulation(n_machines, common_examples_fraction, 
-                                       minibatch_size, learning_rate, n_epochs, 
+    sync_iterations = True
+    mnist_distributed = DistSimulation(n_machines, common_examples_fraction, sync_iterations,
+                                       minibatch_size, learning_rate, n_iterations, 
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)

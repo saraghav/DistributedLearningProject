@@ -96,12 +96,20 @@ class MNISTSoftmaxRegression(object):
         return self.W.eval(session=self.sess)
 
     def set_W(self, W_assign_value):
+        if not hasattr(self, 'history_W'):
+            self.history_W = []
+        self.history_W.append( self.get_W() )
+
         self.sess.run(self.W_assign, feed_dict={self.W_assign_value: W_assign_value})
 
     def get_b(self):
         return self.b.eval(session=self.sess)
 
     def set_b(self, b_assign_value):
+        if not hasattr(self, 'history_b'):
+            self.history_b = []
+        self.history_b.append( self.get_b() )
+
         self.sess.run(self.b_assign, feed_dict={self.b_assign_value: b_assign_value})
 
     def train_model(self):

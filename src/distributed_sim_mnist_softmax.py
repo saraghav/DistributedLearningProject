@@ -11,7 +11,7 @@ import pdb
 import logging
 
 import ilogger
-ilogger.setup_root_logger('/dev/null', logging.DEBUG)
+ilogger.setup_root_logger('/dev/null', logging.INFO)
 logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
@@ -138,7 +138,26 @@ class DistSimulation(MNISTSoftmaxRegression):
         self.sync_iterations = sync_iterations
         self.averaging_interval = averaging_interval
 
+        self._sample_with_replacement = False
+        self._adaptive_sampling_scheme = False
+
         super().__init__(*args, **kwargs)
+
+    @property
+    def sample_with_replacement(self):
+        return self._sample_with_replacement
+
+    @sample_with_replacement.setter
+    def sample_with_replacement(self, setting):
+        self._sample_with_replacement = setting
+
+    @property
+    def adaptive_sampling_scheme(self):
+        return self._adaptive_sampling_scheme
+
+    @adaptive_sampling_scheme.setter
+    def adaptive_sampling_scheme(self, setting):
+        self._adaptive_sampling_scheme = setting
 
     def train_model(self):
         self.partition_data()
@@ -158,7 +177,7 @@ class DistSimulation(MNISTSoftmaxRegression):
         if self.sync_iterations:
             n_examples_per_machine = n_common_examples+n_subset_examples
             n_epochs_per_machine = int(np.ceil(self.n_iterations*self.minibatch_size/n_examples_per_machine))
-            perm_list = self.get_permutations(n_epochs_per_machine, n_examples_per_machine)
+            perm_list = self.get_permutations(n_epochs_per_machine, n_examples_per_machine, n_common_examples, n_subset_examples)
         
         self.training_data_sets = []
         for i_machine in range(self.n_machines):
@@ -221,12 +240,27 @@ class DistSimulation(MNISTSoftmaxRegression):
             accuracy_list.append( model.evaluate_model(test_data) )
         return accuracy_list
 
-    def get_permutations(self, num_perms, perm_length):
+    def get_permutations(self, num_perms, perm_length, n_common_examples, n_subset_examples):
         perm_list = []
         for perm_n in range(num_perms):
-            perm = np.arange(perm_length)
-            np.random.shuffle(perm)
-            perm_list.append(perm)
+            n_total_examples = n_common_examples + n_subset_examples
+            indices = np.arange(n_total_examples)
+            if self._adaptive_sampling_scheme:
+                p_bias = 0.3
+            else:
+                p_bias = 0
+            decay_coef = 1
+            p_common_examples = 1/n_total_examples + p_bias/n_common_examples * np.exp(-decay_coef*perm_n)
+            p_subset_examples = 1/n_total_examples - p_bias/n_subset_examples * np.exp(-decay_coef*perm_n)
+            
+            assert p_common_examples >= 0 and p_common_examples <= 1, "0 <= p_common_examples <= 1 MUST hold true"
+            assert p_subset_examples >= 0 and p_subset_examples <= 1, "0 <= p_subset_examples <= 1 MUST hold true"
+
+            p = np.concatenate([    np.repeat(p_common_examples, n_common_examples),
+                                    np.repeat(p_subset_examples, n_subset_examples),
+                               ], axis=0)
+
+            perm = np.random.choice(indices, perm_length, replace=self._sample_with_replacement, p=p)
         return perm_list
 
 if __name__=='__main__':
@@ -254,6 +288,8 @@ if __name__=='__main__':
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
     mnist_distributed.train_model()
+    # mnist_distributed.sample_with_replacement = True
+    # mnist_distributed.adaptive_sampling_scheme = True
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)
     dist_model_accuracy_list = mnist_distributed.evaluate_distributed_models(mnist.test)
 

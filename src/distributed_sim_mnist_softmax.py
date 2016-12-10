@@ -246,7 +246,9 @@ class DistSimulation(MNISTSoftmaxRegression):
             n_total_examples = n_common_examples + n_subset_examples
             indices = np.arange(n_total_examples)
             if self._adaptive_sampling_scheme:
-                p_bias = 0.3
+                # maximum possible probability bias
+                #   factor of 0.9 to prevent sampling error for without replacement
+                p_bias = n_subset_examples/n_total_examples * 0.9
             else:
                 p_bias = 0
             decay_coef = 1
@@ -259,7 +261,7 @@ class DistSimulation(MNISTSoftmaxRegression):
             p = np.concatenate([    np.repeat(p_common_examples, n_common_examples),
                                     np.repeat(p_subset_examples, n_subset_examples),
                                ], axis=0)
-
+            
             perm = np.random.choice(indices, perm_length, replace=self._sample_with_replacement, p=p)
         return perm_list
 
@@ -287,9 +289,9 @@ if __name__=='__main__':
                                        minibatch_size, learning_rate, n_iterations, 
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
-    mnist_distributed.train_model()
     # mnist_distributed.sample_with_replacement = True
-    # mnist_distributed.adaptive_sampling_scheme = True
+    mnist_distributed.adaptive_sampling_scheme = True
+    mnist_distributed.train_model()
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)
     dist_model_accuracy_list = mnist_distributed.evaluate_distributed_models(mnist.test)
 

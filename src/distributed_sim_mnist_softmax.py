@@ -252,8 +252,14 @@ class DistSimulation(MNISTSoftmaxRegression):
             else:
                 p_bias = 0
             decay_coef = 1
-            p_common_examples = 1/n_total_examples + p_bias/n_common_examples * np.exp(-decay_coef*perm_n)
-            p_subset_examples = 1/n_total_examples - p_bias/n_subset_examples * np.exp(-decay_coef*perm_n)
+            try:
+                p_common_examples = 1/n_total_examples + p_bias/n_common_examples * np.exp(-decay_coef*perm_n)
+            except ZeroDivisionError:
+                p_common_examples = 0
+            try:
+                p_subset_examples = 1/n_total_examples - p_bias/n_subset_examples * np.exp(-decay_coef*perm_n)
+            except ZeroDivisionError:
+                p_subset_examples = 0
             
             assert p_common_examples >= 0 and p_common_examples <= 1, "0 <= p_common_examples <= 1 MUST hold true"
             assert p_subset_examples >= 0 and p_subset_examples <= 1, "0 <= p_subset_examples <= 1 MUST hold true"
@@ -290,7 +296,7 @@ if __name__=='__main__':
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
     # mnist_distributed.sample_with_replacement = True
-    mnist_distributed.adaptive_sampling_scheme = True
+    # mnist_distributed.adaptive_sampling_scheme = True
     mnist_distributed.train_model()
     combined_model_accuracy = mnist_distributed.evaluate_model(mnist.test)
     dist_model_accuracy_list = mnist_distributed.evaluate_distributed_models(mnist.test)

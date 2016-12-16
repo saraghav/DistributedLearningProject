@@ -1,3 +1,3 @@
 vim -p \
-    distributed_sim_mnist_softmax.py \
+    mnist_distributed_sim_convex.py \
     input_data.py \

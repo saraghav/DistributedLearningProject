@@ -272,9 +272,9 @@ class DistSimulation(MNISTSoftmaxRegression):
         return perm_list
 
 if __name__=='__main__':
-    minibatch_size = 100
-    learning_rate = 0.5
-    n_iterations = 1000
+    minibatch_size = 1
+    learning_rate = 0.01
+    n_iterations = 100
 
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     mnist_classifier = MNISTSoftmaxRegression(minibatch_size, learning_rate, 
@@ -287,9 +287,9 @@ if __name__=='__main__':
     logger.info('unified model accuracy = {0}'.format(accuracy))
 
     n_machines = 4
-    common_examples_fraction = 0.4
+    common_examples_fraction = 1
     sync_iterations = True
-    averaging_interval = n_iterations//4
+    averaging_interval = n_iterations
     mnist_distributed = DistSimulation(n_machines, common_examples_fraction, sync_iterations,
                                        averaging_interval, 
                                        minibatch_size, learning_rate, n_iterations, 

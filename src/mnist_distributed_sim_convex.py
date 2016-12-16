@@ -11,7 +11,7 @@ import pdb
 import logging
 
 import ilogger
-ilogger.setup_root_logger('/dev/null', logging.INFO)
+ilogger.setup_root_logger('/dev/null', logging.DEBUG)
 logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
@@ -138,6 +138,7 @@ class DistSimulation(MNISTSoftmaxRegression):
         self.sync_iterations = sync_iterations
         self.averaging_interval = averaging_interval
 
+        self._initialize_same = False
         self._sample_with_replacement = False
         self._adaptive_sampling_scheme = False
 
@@ -149,6 +150,7 @@ class DistSimulation(MNISTSoftmaxRegression):
 
     @sample_with_replacement.setter
     def sample_with_replacement(self, setting):
+        assert isinstance(setting, bool), "setting should be boolean"
         self._sample_with_replacement = setting
 
     @property
@@ -157,7 +159,17 @@ class DistSimulation(MNISTSoftmaxRegression):
 
     @adaptive_sampling_scheme.setter
     def adaptive_sampling_scheme(self, setting):
+        assert isinstance(setting, bool), "setting should be boolean"
         self._adaptive_sampling_scheme = setting
+
+    @property
+    def initialize_same(self):
+        return self._initialize_same
+
+    @initialize_same.setter
+    def initialize_same(self, setting):
+        assert isinstance(setting, bool), "setting should be boolean"
+        self._initialize_same = setting
 
     def train_model(self):
         self.partition_data()
@@ -211,13 +223,18 @@ class DistSimulation(MNISTSoftmaxRegression):
         # why use the slice [1:] ?
         #    index [0] == 0, zero iterations should not be considered
         train_stride_list = np.arange(0, self.n_iterations+1, self.averaging_interval)[1:]
-        for train_stride in train_stride_list:
+        for stride_n, train_stride in enumerate(train_stride_list):
+            for model in self.distributed_models:
+                if stride_n == 0 and not self._initialize_same:
+                    logger.debug('initializing distributed models with different values')
+                    break
+                else:
+                    logger.debug('initializing distributed models with same values')
+                model.set_W(self.get_W())
+                model.set_b(self.get_b())
             for model in self.distributed_models:
                 model.train_model()
             self.combine_distributed_models()
-            for model in self.distributed_models:
-                model.set_W(self.get_W())
-                model.set_b(self.get_b())
     
     def combine_distributed_models(self):
         logger.debug('combine_distributed_models()')
@@ -295,6 +312,7 @@ if __name__=='__main__':
                                        minibatch_size, learning_rate, n_iterations, 
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
+    # mnist_distributed.initialize_same = True
     # mnist_distributed.sample_with_replacement = True
     # mnist_distributed.adaptive_sampling_scheme = True
     mnist_distributed.train_model()

@@ -1,3 +1,4 @@
 vim -p \
     mnist_distributed_sim_convex.py \
+    mnist_distributed_sim_nonconvex.py \
     input_data.py \

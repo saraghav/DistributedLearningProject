@@ -24,9 +24,9 @@ class MNISTSoftmaxRegression(object):
         # only ONE summary key is supported
         self.write_summary = write_summary
         self.summaries = ['/'.join([tf.GraphKeys.SUMMARIES, self.model_name])]
-
-        self.alpha = alpha
         
+        self.alpha = alpha
+
         logger.info('data for {0} : images.shape = {1}, labels.shape = {2}'.format(model_name, mnist_train.images.shape, mnist_train.labels.shape))
 
         if mnist_train is None:
@@ -40,6 +40,14 @@ class MNISTSoftmaxRegression(object):
         self.mnist_train = input_data.read_data_sets("MNIST_data/", one_hot=True).train
 
     def construct_model(self):
+        def weight_variable(shape, name):
+            initial = tf.truncated_normal(shape, stddev=0.1)
+            return tf.Variable(initial, name=name)
+
+        def bias_variable(shape, name):
+            initial = tf.constant(0.1, shape=shape)
+            return tf.Variable(initial, name=name)
+        
         def l2(weights):
             return tf.nn.l2_loss(weights)
 
@@ -56,28 +64,58 @@ class MNISTSoftmaxRegression(object):
             #  W.shape = n_features x n_classes
             #  also assign model parameters if needed
             with tf.variable_scope('model_parameters'):
-                self.W = tf.Variable(tf.random_normal([784, 10]), name='W')
-                # self.W = tf.Variable(tf.zeros([784, 10]), name='W')
-                self.b = tf.Variable(tf.random_normal([10]), name='b')
-                # self.b = tf.Variable(tf.zeros([10]), name='b')
+                self.W_name_list = []
+                self.W_list = []
+                self.W_shape_list = [
+                    [784, 10],
+                ]
+                self.W_assign_value_list = []
+                self.W_assign_list = []
 
-                self.W_assign_value = tf.placeholder(tf.float32, [784, 10], name='W_assign_value')
-                self.b_assign_value = tf.placeholder(tf.float32, [10], name='b_assign_value')
-                self.W_assign = tf.assign(self.W, self.W_assign_value, name='W_assign')
-                self.b_assign = tf.assign(self.b, self.b_assign_value, name='b_assign')
+                self.b_name_list = []
+                self.b_list = []
+                self.b_assign_value_list = []
+                self.b_assign_list = []
+
+                for i, W_shape in enumerate(self.W_shape_list):
+                    b_shape = W_shape[-1:]
+                    W_name = 'W{0}'.format(i)
+                    b_name = 'b{0}'.format(i)
+
+                    W = weight_variable(W_shape, W_name)
+                    b = bias_variable(b_shape, b_name)
+    
+                    W_assign_value = tf.placeholder(tf.float32, W_shape, name='{0}_assign_value'.format(W_name))
+                    b_assign_value = tf.placeholder(tf.float32, b_shape, name='{0}_assign_value'.format(b_name))
+                    W_assign = tf.assign(W, W_assign_value, name='{0}_assign'.format(W_name))
+                    b_assign = tf.assign(b, b_assign_value, name='{0}_assign'.format(b_name))
+
+                    self.W_name_list.append(W_name)
+                    self.W_list.append(W)
+                    self.W_assign_value_list.append(W_assign_value)
+                    self.W_assign_list.append(W_assign)
+
+                    self.b_name_list.append(b_name)
+                    self.b_list.append(b)
+                    self.b_assign_value_list.append(b_assign_value)
+                    self.b_assign_list.append(b_assign)
+
+            network = self.x
 
             # output
             with tf.variable_scope('softmax_layer'):
-                self.Wx_plus_b = tf.add(tf.matmul(self.x, self.W), self.b, name='Wx_plus_b')
-                self.y = tf.nn.softmax(self.Wx_plus_b, name='softmax_OF_Wx_plus_b')
+                network = tf.add(tf.matmul(network, self.W_list[0]), self.b_list[0])
+                network = tf.nn.softmax(network, name='softmax_output')
+
+            self.y = network
 
             # labels and training
             with tf.variable_scope('training'):
                 self.y_ = tf.placeholder(tf.float32, [None, 10], name='labels')
                 self.cross_entropy = tf.reduce_mean( -tf.reduce_sum(self.y_ * tf.log(self.y), reduction_indices=[1]), name='cross_entropy' )
                 self.regularizer_list = [
-                    self.alpha * l2(self.W),
-                    self.alpha * l2(self.b),
+                    self.alpha * l2(self.W_list[0]),
+                    self.alpha * l2(self.b_list[0]),
                 ]
                 self.total_loss = self.cross_entropy + sum(self.regularizer_list)
                 
@@ -107,26 +145,30 @@ class MNISTSoftmaxRegression(object):
                 self.init = tf.variables_initializer(model_variables)
             self.sess.run(self.init)
     
-    def get_W(self):
-        return self.W.eval(session=self.sess)
+    def get_W_list_values(self):
+        W_list_values = [ W.eval(session=self.sess) for W in self.W_list ]
+        return W_list_values
 
-    def set_W(self, W_assign_value):
+    def set_W_list_values(self, W_list_values):
         if not hasattr(self, 'history_W'):
             self.history_W = []
-        self.history_W.append( self.get_W() )
+        self.history_W.append( self.get_W_list_values() )
+        
+        for W_assign, W_assign_value, W_value in zip(self.W_assign_list, self.W_assign_value_list, W_list_values):
+            self.sess.run(W_assign, feed_dict={W_assign_value: W_value})
 
-        self.sess.run(self.W_assign, feed_dict={self.W_assign_value: W_assign_value})
+    def get_b_list_values(self):
+        b_list_values = [ b.eval(session=self.sess) for b in self.b_list ]
+        return b_list_values
 
-    def get_b(self):
-        return self.b.eval(session=self.sess)
-
-    def set_b(self, b_assign_value):
+    def set_b_list_values(self, b_list_values):
         if not hasattr(self, 'history_b'):
             self.history_b = []
-        self.history_b.append( self.get_b() )
+        self.history_b.append( self.get_b_list_values() )
 
-        self.sess.run(self.b_assign, feed_dict={self.b_assign_value: b_assign_value})
-
+        for b_assign, b_assign_value, b_value in zip(self.b_assign_list, self.b_assign_value_list, b_list_values):
+            self.sess.run(b_assign, feed_dict={b_assign_value: b_value})
+    
     def train_model(self):
         if self.write_summary:
             summary_dir = path.join(path.curdir, 'summary', 'train', self.model_name)
@@ -246,8 +288,8 @@ class DistSimulation(MNISTSoftmaxRegression):
                     break
                 else:
                     logger.debug('initializing distributed models with same values')
-                model.set_W(self.get_W())
-                model.set_b(self.get_b())
+                model.set_W_list_values(self.get_W_list_values())
+                model.set_b_list_values(self.get_b_list_values())
             for model in self.distributed_models:
                 model.train_model()
             self.combine_distributed_models()
@@ -259,13 +301,13 @@ class DistSimulation(MNISTSoftmaxRegression):
         b_list = []
 
         for i_machine, model in enumerate(self.distributed_models):
-            W_list.append( model.get_W() )
-            b_list.append( model.get_b() )
+            W_list.append( model.get_W_list_values() )
+            b_list.append( model.get_b_list_values() )
 
         W_avg = np.mean(W_list, axis=0)
         b_avg = np.mean(b_list, axis=0)
-        self.set_W(W_avg)
-        self.set_b(b_avg)
+        self.set_W_list_values(W_avg)
+        self.set_b_list_values(b_avg)
     
     def evaluate_distributed_models(self, test_data):
         accuracy_list = []

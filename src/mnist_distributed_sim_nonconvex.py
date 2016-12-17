@@ -132,7 +132,9 @@ class MNISTConvNet(object):
             with tf.variable_scope('training'):
                 self.y_ = tf.placeholder(tf.float32, [None, 10], name='labels')
                 self.cross_entropy = tf.reduce_mean( -tf.reduce_sum(self.y_ * tf.log(self.y), reduction_indices=[1]), name='cross_entropy' )
-                self.train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.cross_entropy)
+                
+                optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
+                self.train_step = optimizer.minimize(self.cross_entropy)
             
             # evaluation
             with tf.variable_scope('evaluation'):

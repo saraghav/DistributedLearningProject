@@ -80,7 +80,9 @@ class MNISTSoftmaxRegression(object):
                     self.alpha * l2(self.b),
                 ]
                 self.total_loss = self.cross_entropy + sum(self.regularizer_list)
-                self.train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.total_loss)
+                
+                optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
+                self.train_step = optimizer.minimize(self.total_loss)
             
             # evaluation
             with tf.variable_scope('evaluation'):

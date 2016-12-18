@@ -1,4 +1,5 @@
 vim -p \
+    analysis_model_divergence.py \
     mnist_distributed_sim_convex.py \
     mnist_distributed_sim_nonconvex.py \
     mnist_distributed_sim_strongly_convex.py \

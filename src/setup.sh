@@ -1,5 +1,7 @@
 #!/bin/bash
 
+apt-get --assume-yes update
+apt-get --assume-yes install vim
 apt-get --assume-yes install python3 python3-pip python3-numpy python3-scipy python3-matplotlib
 apt-get --assume-yes install screen
 

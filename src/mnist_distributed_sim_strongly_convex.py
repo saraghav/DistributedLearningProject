@@ -11,7 +11,6 @@ import pdb
 import logging
 
 import ilogger
-ilogger.setup_root_logger('/dev/null', logging.DEBUG)
 logger = ilogger.setup_logger(__name__)
 
 class MNISTSoftmaxRegression(object):
@@ -118,6 +117,10 @@ class MNISTSoftmaxRegression(object):
                     self.alpha * l2(self.b_list[0]),
                 ]
                 self.total_loss = self.cross_entropy + sum(self.regularizer_list)
+                
+                global_step = tf.Variable(0, trainable=False)
+                adaptive_learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                                                           1000, 0.9)
                 
                 optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
                 self.train_step = optimizer.minimize(self.total_loss)
@@ -320,7 +323,7 @@ class DistSimulation(MNISTSoftmaxRegression):
         for perm_n in range(num_perms):
             n_total_examples = n_common_examples + n_subset_examples
             indices = np.arange(n_total_examples)
-            if self._adaptive_sampling_scheme:
+            if self._adaptive_sampling_scheme and n_common_examples>0:
                 # maximum possible probability bias
                 #   factor of 0.9 to prevent sampling error for without replacement
                 p_bias = n_subset_examples/n_total_examples * 0.9
@@ -347,6 +350,8 @@ class DistSimulation(MNISTSoftmaxRegression):
         return perm_list
 
 if __name__=='__main__':
+    ilogger.setup_root_logger('/dev/null', logging.DEBUG)
+
     minibatch_size = 1
     learning_rate = 0.01
     n_iterations = 100

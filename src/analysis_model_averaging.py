@@ -15,7 +15,10 @@ import time
 
 ilogger.setup_root_logger('/dev/null', logging.ERROR)
 
-def run_simulation(features):
+def run_simulation(model_type, mnist, 
+                   unified_model_args, unified_model_kwargs, 
+                   dist_model_args, dist_model_kwargs,
+                   init_same, sample_with_replacement, adap_sampling):
     import mnist_distributed_sim_convex as Convex
     import mnist_distributed_sim_nonconvex as NonConvex
     import mnist_distributed_sim_strongly_convex as StronglyConvex
@@ -47,23 +50,26 @@ def run_simulation(features):
     mnist_distributed = DistSimulation(*dist_model_args, **dist_model_kwargs)
     mnist_distributed.test_data = mnist.test
     mnist_distributed.initialize_same = init_same
-    # mnist_distributed.sample_with_replacement = True
+    mnist_distributed.sample_with_replacement = sample_with_replacement
     mnist_distributed.adaptive_sampling_scheme = adap_sampling
     mnist_distributed.train_model()
 
     metric = Metrics('model_averaging')
     metric.model_type = model_type
-    metric.minibatch_size = minibatch_size
-    metric.learning_rate = learning_rate
+
+    metric.minibatch_size = unified_model_args[0]
+    metric.learning_rate = unified_model_args[1]
     metric.adaptive_learning_rate = False
-    metric.n_iterations = n_iterations
-    metric.n_machines = n_machines
-    metric.common_examples_fraction = common_examples_fraction
-    metric.sync_iterations = sync_iterations
-    metric.averaging_interval = averaging_interval
+    metric.n_iterations = unified_model_args[2]
+
+    metric.n_machines = dist_model_args[0]
+    metric.common_examples_fraction = dist_model_args[1]
+    metric.sync_iterations = dist_model_args[2]
+    metric.averaging_interval = dist_model_args[3]
     
-    metric.initialize_same = mnist_distributed.initialize_same
-    metric.adaptive_sampling_scheme = mnist_distributed.adaptive_sampling_scheme
+    metric.initialize_same = init_same
+    metric.sample_with_replacement = sample_with_replacement
+    metric.adaptive_sampling_scheme = adap_sampling
     
     metric.unified_history_accuracy = mnist_classifier.history_accuracy
     metric.history_accuracy = mnist_distributed.history_accuracy
@@ -120,7 +126,11 @@ if __name__=='__main__':
                                         'model_name': 'DistributedClassifier', 
                                         'write_summary': False,
                                     }
-                                    future = executor.submit(run_simulation)
+                                    future = executor.submit(run_simulation, 
+                                                             model_type, mnist, 
+                                                             unified_model_args, unified_model_kwargs, 
+                                                             dist_model_args, dist_model_kwargs,
+                                                             init_same, sample_with_replacement, adap_sampling)
                                     futures_list.append(future)
     except:
         pass

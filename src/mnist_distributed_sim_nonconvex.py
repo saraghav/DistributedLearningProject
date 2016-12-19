@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import pdb
 import logging
 
+from analysis_model_divergence import get_dist_model_distance, Metrics
+
 import ilogger
 logger = ilogger.setup_logger(__name__)
 
@@ -23,6 +25,11 @@ class MNISTConvNet(object):
         # only ONE summary key is supported
         self.write_summary = write_summary
         self.summaries = ['/'.join([tf.GraphKeys.SUMMARIES, self.model_name])]
+
+        self.total_iterations = 0
+        self.history_W = []
+        self.history_b = []
+        self.history_accuracy = []
         
         logger.info('data for {0} : images.shape = {1}, labels.shape = {2}'.format(model_name, mnist_train.images.shape, mnist_train.labels.shape))
 
@@ -192,12 +199,16 @@ class MNISTConvNet(object):
             summary_writer = tf.train.SummaryWriter(summary_dir, self.sess.graph)
 
         for i in range(self.n_iterations):
+            self.total_iterations += 1
             batch_xs, batch_ys = self.mnist_train.next_batch(self.minibatch_size)
             if self.write_summary:
                 summary, _ = self.sess.run([self.merge_summaries, self.train_step], feed_dict={self.x: batch_xs, self.y_: batch_ys})
                 summary_writer.add_summary(summary, i)
             else:
                 self.sess.run(self.train_step, feed_dict={self.x: batch_xs, self.y_: batch_ys})
+            if hasattr(self, 'test_data'):
+                accuracy = self.evaluate_model(self.test_data)
+                self.history_accuracy.append( (self.total_iterations, accuracy) )
 
     def evaluate_model(self, test_data):
         accuracy_eval = self.sess.run(self.accuracy, feed_dict={self.x: test_data.images, self.y_: test_data.labels})
@@ -215,6 +226,8 @@ class DistSimulation(MNISTConvNet):
         self._initialize_same = False
         self._sample_with_replacement = False
         self._adaptive_sampling_scheme = False
+
+        self.history_dist_model_distance = []
 
         super().__init__(*args, **kwargs)
 
@@ -289,15 +302,18 @@ class DistSimulation(MNISTConvNet):
         for i_machine, mnist_train in enumerate(self.training_data_sets):
             dist_model_name = '/'.join([self.model_name, 'dist_model_{0}'.format(i_machine)])
 
-            model = MNISTConvNet(self.minibatch_size, self.learning_rate, self.n_iterations, 
+            model = MNISTConvNet(self.minibatch_size, self.learning_rate, self.averaging_interval, 
                                            mnist_train, model_name=dist_model_name, 
                                            write_summary=self.write_summary)
+            if hasattr(self, 'test_data'):
+                model.test_data = self.test_data
             self.distributed_models.append(model)
         
         # why use the slice [1:] ?
         #    index [0] == 0, zero iterations should not be considered
         train_stride_list = np.arange(0, self.n_iterations+1, self.averaging_interval)[1:]
         for stride_n, train_stride in enumerate(train_stride_list):
+            self.total_iterations += self.averaging_interval
             for model in self.distributed_models:
                 if stride_n == 0 and not self._initialize_same:
                     logger.debug('initializing distributed models with different values')
@@ -308,7 +324,14 @@ class DistSimulation(MNISTConvNet):
                 model.set_b_list_values(self.get_b_list_values())
             for model in self.distributed_models:
                 model.train_model()
+
+            dist_model_distance_matrix = get_dist_model_distance(self)
+            self.history_dist_model_distance.append( (self.total_iterations, dist_model_distance_matrix) )
+
             self.combine_distributed_models()
+            if hasattr(self, 'test_data'):
+                accuracy = self.evaluate_model(self.test_data)
+                self.history_accuracy.append( (self.total_iterations, accuracy) )
     
     def combine_distributed_models(self):
         logger.debug('combine_distributed_models()')
@@ -367,13 +390,14 @@ if __name__=='__main__':
 
     minibatch_size = 1
     learning_rate = 0.01
-    n_iterations = 10000
+    n_iterations = 100
 
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     mnist_classifier = MNISTConvNet(minibatch_size, learning_rate, 
                                               n_iterations, mnist.train, 
                                               model_name='UnifiedClassifier', 
                                               write_summary=False)
+    mnist_classifier.test_data = mnist.test
     mnist_classifier.train_model()
     accuracy = mnist_classifier.evaluate_model(mnist.test)
 
@@ -388,6 +412,7 @@ if __name__=='__main__':
                                        minibatch_size, learning_rate, n_iterations, 
                                        mnist.train, model_name='DistributedClassifier', 
                                        write_summary=False)
+    mnist_distributed.test_data = mnist.test
     # mnist_distributed.initialize_same = True
     # mnist_distributed.sample_with_replacement = True
     # mnist_distributed.adaptive_sampling_scheme = True

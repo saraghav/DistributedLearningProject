@@ -30,8 +30,8 @@ def run_simulation(features):
         'NonConvex': NonConvex.DistSimulation,
         'StronglyConvex': StronglyConvex.DistSimulation,
     }
-    UnifiedModel = unified_model_type_dict[features[0]]
-    DistSimulation = dist_model_type_dict[features[0]]
+    UnifiedModel = unified_model_type_dict[model_type]
+    DistSimulation = dist_model_type_dict[model_type]
 
     print('Unified Model')
     print(unified_model_args)
@@ -52,6 +52,7 @@ def run_simulation(features):
     mnist_distributed.train_model()
 
     metric = Metrics('model_averaging')
+    metric.model_type = model_type
     metric.minibatch_size = minibatch_size
     metric.learning_rate = learning_rate
     metric.adaptive_learning_rate = False

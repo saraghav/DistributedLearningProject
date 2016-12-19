@@ -85,12 +85,12 @@ def run_simulation(features, mnist, model_args, model_kwargs):
 
 if __name__=='__main__':
     # model_type_list = ['Convex', 'NonConvex', 'StronglyConvex']
-    model_type_list = ['NonConvex']
+    model_type_list = ['StronglyConvex']
     n_iterations_list = [100, 500, 1000, 5000, 10000, 55000]
     common_ratio_list = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     init_same_list = [False, True]
     adap_sampling_list = [False, True]
-    repetitions = 10
+    repetitions = 5
     # model_type_list = ['Convex'] # , 'NonConvex', 'StronglyConvex']
     # n_iterations_list = [10000]
     # common_ratio_list = [0.0, 1.0]
@@ -167,9 +167,9 @@ if __name__=='__main__':
         metric.sync_iterations = sync_iterations
         metric.sample_with_replacement = sample_with_replacement
 
-    with open('/mydata/model_distance_2.pickle', 'wb') as f:
+    with open('/mydata/model_distance_3.pickle', 'wb') as f:
         pickle.dump(model_distance_metrics, f)
-    with open('/mydata/dist_accuracy_2.pickle', 'wb') as f:
+    with open('/mydata/dist_accuracy_3.pickle', 'wb') as f:
         pickle.dump(dist_accuracy_metrics, f)
-    with open('/mydata/combined_accuracy_2.pickle', 'wb') as f:
+    with open('/mydata/combined_accuracy_3.pickle', 'wb') as f:
         pickle.dump(combined_accuracy_metrics, f)

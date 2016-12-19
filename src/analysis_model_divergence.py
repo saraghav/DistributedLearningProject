@@ -54,7 +54,7 @@ def get_dist_model_distance(dist_model):
             model_dist_matrix[j,i] = model_distance
     return model_dist_matrix
 
-def run_simulation(features, mnist, model_args, model_kwargs):
+def run_simulation(features, mnist, model_args, model_kwargs, init_same, sample_with_replacement, adap_sampling):
     import mnist_distributed_sim_convex as Convex
     import mnist_distributed_sim_nonconvex as NonConvex
     import mnist_distributed_sim_strongly_convex as StronglyConvex
@@ -90,7 +90,7 @@ if __name__=='__main__':
     common_ratio_list = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     init_same_list = [False, True]
     adap_sampling_list = [False, True]
-    repetitions = 5
+    repetitions = 2
     # model_type_list = ['Convex'] # , 'NonConvex', 'StronglyConvex']
     # n_iterations_list = [10000]
     # common_ratio_list = [0.0, 1.0]
@@ -131,7 +131,9 @@ if __name__=='__main__':
                                     'write_summary': False,
                                 }
                                 for rep in range(repetitions):
-                                    future = executor.submit(run_simulation, features, mnist, model_args, model_kwargs)
+                                    future = executor.submit(run_simulation, features, mnist, model_args, 
+                                                             model_kwargs, init_same, sample_with_replacement,
+                                                             adap_sampling)
                                     futures_list.append(future)
     except:
         pass
